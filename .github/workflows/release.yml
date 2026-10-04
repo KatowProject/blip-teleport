@@ -35,10 +35,16 @@ jobs:
           if (-not $sanny) {
             throw 'sanny.exe was not found.'
           }
-          & $sanny.FullName --mode sa_sbl --compile RadarBlip_Teleport.txt RadarBlip_Teleport.cs
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path RadarBlip_Teleport.cs)) {
-            if (Test-Path compile.log) {
-              Get-Content compile.log
+          & $sanny.FullName --mode sa_sbl --compile "$PWD\RadarBlip_Teleport.txt" "$PWD\RadarBlip_Teleport.cs"
+          $deadline = (Get-Date).AddSeconds(30)
+          while (-not (Test-Path "$PWD\RadarBlip_Teleport.cs") -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 1
+          }
+          if (-not (Test-Path "$PWD\RadarBlip_Teleport.cs")) {
+            $logs = Get-ChildItem -Path $PWD, $sanny.DirectoryName -Filter compile.log -Recurse -ErrorAction SilentlyContinue
+            foreach ($log in $logs) {
+              Write-Output "===== $($log.FullName) ====="
+              Get-Content $log.FullName
             }
             throw 'Sanny Builder compilation failed.'
           }
