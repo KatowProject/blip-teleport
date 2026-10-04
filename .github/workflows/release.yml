@@ -1,0 +1,57 @@
+name: Build release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref_name }}
+
+      - name: Download Sanny Builder
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/sannybuilder/dev/releases/download/v4.2.0/SannyBuilder-v4.2.0.zip'
+          Invoke-WebRequest -Uri $url -OutFile sannybuilder.zip
+          if ((Get-FileHash sannybuilder.zip -Algorithm SHA256).Hash.ToLower() -ne '4aceb1c1e430e57bc57216fbe95a3eac1829f2bd982ba19d99bb147caa4b33e6') {
+            throw 'Sanny Builder archive checksum mismatch.'
+          }
+          Expand-Archive -Path sannybuilder.zip -DestinationPath sannybuilder
+
+      - name: Compile CLEO script
+        shell: pwsh
+        run: |
+          $sanny = Get-ChildItem -Path sannybuilder -Filter sanny.exe -Recurse | Select-Object -First 1
+          if (-not $sanny) {
+            throw 'sanny.exe was not found.'
+          }
+          & $sanny.FullName --mode sa_sbl --compile RadarBlip_Teleport.txt RadarBlip_Teleport.cs
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path RadarBlip_Teleport.cs)) {
+            if (Test-Path compile.log) {
+              Get-Content compile.log
+            }
+            throw 'Sanny Builder compilation failed.'
+          }
+
+      - name: Upload compiled script to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: gh release upload "${{ github.event.release.tag_name }}" RadarBlip_Teleport.cs --clobber
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadarBlip_Teleport
+          path: RadarBlip_Teleport.cs

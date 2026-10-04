@@ -1,0 +1,135 @@
+// RadarBlip_Teleport.txt
+// GTA SA 1.0 US, Sanny Builder 4.0.0, CLEO
+// General-purpose radar blip teleport.
+//
+// Press F6: CJ (and his vehicle if he is currently in one) will be moved
+// to the first coordinate blip found on the radar: yellow dot / square / triangle
+// (COORD type without a sprite). If no such blip exists, nothing happens.
+//
+// Ignored:
+// - Shop / safehouse icons (they have a sprite)
+// - Player-created waypoint (waypoint sprite)
+// - Blips attached to vehicles / peds / objects (entity blips)
+//
+// Method: reads the game's radar blip table (CRadar::ms_RadarTrace,
+// address 0xBA86F0, 175 entries x 0x28 bytes). READ-ONLY access.
+{$CLEO .cs}
+
+0000:
+
+:MAIN
+wait 0
+if
+    0AB0: key_pressed 117
+then
+    gosub @TRY_TELEPORT
+    wait 300
+end
+jump @MAIN
+
+// ------------------------------------------------------------
+// All character/vehicle operations are executed in NESTED
+// conditions because SCM may continue evaluating subsequent
+// conditions even when a previous condition fails.
+// ------------------------------------------------------------
+:TRY_TELEPORT
+if
+    0256: player 0 defined
+then
+    01F5: get_player_char 0 store_to 0@
+    gosub @FIND_BLIP
+    if
+        24@ > 0
+    then
+        // Load the destination area first to prevent falling
+        // through unloaded map geometry.
+        03CB: load_scene 4@ 5@ 6@
+        if
+            00DF: actor 0@ driving
+        then
+            03C0: store_car_char_is_in_no_save 0@ store_to 1@
+            00AB: set_car_coordinates 1@ to 4@ 5@ 6@
+        else
+            00A1: set_char_coordinates 0@ 4@ 5@ 6@
+        end
+    end
+end
+return
+
+// ------------------------------------------------------------
+// Result:
+// 24@ = 1 if a valid blip was found
+// 24@ = 0 if no valid blip was found
+//
+// 4@ 5@ 6@ = X Y Z coordinates of the selected blip.
+//
+// Criteria:
+// - Blip is in use
+// - Blip type is COORD (4)
+// - Sprite is 0
+// - Coordinates are within a 4000-unit radius of CJ
+//   to reject invalid / garbage / NaN-like values.
+//
+// The blip with the lowest index is selected
+// (the earliest matching blip in the radar table).
+// ------------------------------------------------------------
+:FIND_BLIP
+24@ = 0
+18@ = 0
+
+while 18@ < 175
+    0085: 19@ = 18@
+    19@ *= 40
+    19@ += 0xBA86F0
+
+    0085: 20@ = 19@
+    20@ += 0x25
+    0A8D: read_memory 20@ size 1 virtual_protect 0 store_to 21@
+    21@ &= 2
+
+    if
+        21@ == 2
+    then
+        0085: 20@ = 19@
+        20@ += 0x26
+        0A8D: read_memory 20@ size 1 virtual_protect 0 store_to 21@
+        21@ &= 60
+
+        if
+            21@ == 16
+        then
+            0085: 20@ = 19@
+            20@ += 0x24
+            0A8D: read_memory 20@ size 1 virtual_protect 0 store_to 21@
+
+            if
+                21@ == 0
+            then
+                0085: 20@ = 19@
+                20@ += 8
+                0A8D: read_memory 20@ size 4 virtual_protect 0 store_to 26@
+
+                20@ += 4
+                0A8D: read_memory 20@ size 4 virtual_protect 0 store_to 27@
+
+                20@ += 4
+                0A8D: read_memory 20@ size 4 virtual_protect 0 store_to 28@
+
+                if
+                    00FE: locate_char_any_means_3d 0@ 26@ 27@ 28@ radius 4000.0 4000.0 4000.0 draw_sphere 0
+                then
+                    0085: 4@ = 26@
+                    0085: 5@ = 27@
+                    0085: 6@ = 28@
+
+                    24@ = 1
+                    18@ = 175
+                end
+            end
+        end
+    end
+
+    18@ += 1
+end
+
+return
